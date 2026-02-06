@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useEffect, FormEvent } from 'react'
+import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+import { useGetCategoriesQuery } from '@/lib/features/api/categories.api'
+import { useGetItemTypesQuery } from '@/lib/features/api/itemTypes.api'
+import { useCreateProductMutation } from '@/lib/features/api/products.api'
 
 interface Category {
     id: string
@@ -18,9 +21,17 @@ interface ItemType {
 
 export default function NewProductPage() {
     const router = useRouter()
-    const [categories, setCategories] = useState<Category[]>([])
-    const [itemTypes, setItemTypes] = useState<ItemType[]>([])
-    const [isLoading, setIsLoading] = useState(false)
+
+    const { data: categoriesData } = useGetCategoriesQuery(undefined)
+    const { data: itemTypesData } = useGetItemTypesQuery(undefined)
+    const [createProduct, { isLoading }] = useCreateProductMutation()
+
+    const categories: Category[] = categoriesData?.categories || []
+    const itemTypes: ItemType[] = itemTypesData?.itemTypes || []
+
+    const [selectedFile, setSelectedFile] = useState<File | null>(null)
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
     const [formData, setFormData] = useState({
         itemName: '',
         barcode: '',
@@ -35,50 +46,36 @@ export default function NewProductPage() {
         itemTypeId: '',
     })
 
-    useEffect(() => {
-        fetchCategories()
-        fetchItemTypes()
-    }, [])
-
-    const fetchCategories = async () => {
-        const res = await fetch('/api/categories')
-        const data = await res.json()
-        setCategories(data.categories || [])
-    }
-
-    const fetchItemTypes = async () => {
-        const res = await fetch('/api/item-types')
-        const data = await res.json()
-        setItemTypes(data.itemTypes || [])
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (file) {
+            setSelectedFile(file)
+            const reader = new FileReader()
+            reader.onloadend = () => {
+                setPreviewUrl(reader.result as string)
+            }
+            reader.readAsDataURL(file)
+        }
     }
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault()
-        setIsLoading(true)
 
         try {
-            const response = await fetch('/api/products', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ...formData,
-                    wholesalePrice: parseFloat(formData.wholesalePrice.toString()),
-                    retailPrice: parseFloat(formData.retailPrice.toString()),
-                    tax: parseFloat(formData.tax.toString()),
-                    quantity: parseInt(formData.quantity.toString()),
-                }),
+            const data = new FormData()
+            Object.entries(formData).forEach(([key, value]) => {
+                data.append(key, value.toString())
             })
-
-            if (!response.ok) {
-                throw new Error('Failed to create product')
+            if (selectedFile) {
+                data.append('picture', selectedFile)
             }
+
+            await createProduct(data).unwrap()
 
             router.push('/products')
         } catch (error) {
             console.error('Error creating product:', error)
             alert('Failed to create product')
-        } finally {
-            setIsLoading(false)
         }
     }
 
@@ -189,6 +186,32 @@ export default function NewProductPage() {
                             value={formData.shortDescription}
                             onChange={(e) => setFormData({ ...formData, shortDescription: e.target.value })}
                         />
+
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                                Product Image
+                            </label>
+                            <div className="flex items-start gap-4">
+                                {previewUrl && (
+                                    <img
+                                        src={previewUrl}
+                                        alt="Preview"
+                                        className="w-32 h-32 object-cover rounded-lg border border-gray-200"
+                                    />
+                                )}
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleFileChange}
+                                    className="block w-full text-sm text-gray-500
+                                        file:mr-4 file:py-2 file:px-4
+                                        file:rounded-md file:border-0
+                                        file:text-sm file:font-semibold
+                                        file:bg-primary-50 file:text-primary-700
+                                        hover:file:bg-primary-100"
+                                />
+                            </div>
+                        </div>
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">

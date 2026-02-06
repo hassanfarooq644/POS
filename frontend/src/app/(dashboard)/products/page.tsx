@@ -1,77 +1,65 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
 import { Input } from '@/components/ui/Input'
 import { FiPlus, FiEdit, FiTrash2, FiSearch } from 'react-icons/fi'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, getImageUrl } from '@/lib/utils'
+import { useGetProductsQuery, useDeleteProductMutation } from '@/lib/features/api/products.api'
+import placeholderImage from '@/assets/images/300x300.png'
 
 interface Product {
     id: string
     itemName: string
+    picture: string
     barcode: string
     quantity: number
     retailPrice: number
     category: { name: string }
-    itemType: { name: string }
 }
 
 export default function ProductsPage() {
-    const [products, setProducts] = useState<Product[]>([])
-    const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
+    const { data, isLoading, isError } = useGetProductsQuery(undefined)
+    const [deleteProduct] = useDeleteProductMutation()
     const [search, setSearch] = useState('')
-    const [isLoading, setIsLoading] = useState(true)
 
-    useEffect(() => {
-        fetchProducts()
-    }, [])
+    const products = data?.products || []
 
-    useEffect(() => {
-        if (search) {
-            const filtered = products.filter(
-                (p) =>
-                    p.itemName.toLowerCase().includes(search.toLowerCase()) ||
-                    p.barcode.toLowerCase().includes(search.toLowerCase())
-            )
-            setFilteredProducts(filtered)
-        } else {
-            setFilteredProducts(products)
-        }
-    }, [search, products])
-
-    const fetchProducts = async () => {
-        try {
-            const response = await fetch('/api/products')
-            const data = await response.json()
-            setProducts(data.products || [])
-            setFilteredProducts(data.products || [])
-        } catch (error) {
-            console.error('Error fetching products:', error)
-        } finally {
-            setIsLoading(false)
-        }
-    }
+    const filteredProducts = products.filter(
+        (p: Product) =>
+            p.itemName.toLowerCase().includes(search.toLowerCase()) ||
+            p.barcode.toLowerCase().includes(search.toLowerCase())
+    )
 
     const handleDelete = async (id: string) => {
         if (!confirm('Are you sure you want to delete this product?')) return
 
         try {
-            await fetch(`/api/products/${id}`, { method: 'DELETE' })
-            fetchProducts()
+            await deleteProduct(id).unwrap()
         } catch (error) {
             console.error('Error deleting product:', error)
         }
     }
 
     const columns = [
+        { key: 'picture', label: 'Picture', render: (product: Product) => (
+            <Image 
+                src={getImageUrl(product.picture) || placeholderImage} 
+                alt={product.itemName} 
+                height={100} 
+                width={100} 
+                className="w-12 h-12 rounded-md object-cover border border-gray-200" 
+            /> 
+        )},
         { key: 'itemName', label: 'Product Name' },
         { key: 'barcode', label: 'Barcode' },
         {
             key: 'category',
             label: 'Category',
-            render: (product: Product) => product.category.name,
+            render: (product: Product) => product.category?.name || 'N/A',
         },
         {
             key: 'quantity',
@@ -113,6 +101,14 @@ export default function ProductsPage() {
 
     if (isLoading) {
         return <div className="flex justify-center py-12">Loading...</div>
+    }
+
+    if (isError) {
+        return (
+            <div className="bg-danger-50 border border-danger-200 text-danger-700 px-4 py-3 rounded-lg">
+                Error loading products. Please try again later.
+            </div>
+        )
     }
 
     return (

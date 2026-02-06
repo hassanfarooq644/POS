@@ -1,23 +1,31 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useAppSelector, useAppDispatch } from '@/lib/hooks'
 import { clearUser } from '@/lib/features/auth/authSlice'
 import { FiUser, FiLogOut } from 'react-icons/fi'
 import { Button } from './ui/Button'
+import { useLogoutMutation } from '@/lib/features/api/auth.api'
+import Cookies from 'js-cookie'
 
 export default function Navbar() {
-    const pathname = usePathname()
     const router = useRouter()
     const dispatch = useAppDispatch()
     const user = useAppSelector((state) => state.auth.user)
+    const [logout] = useLogoutMutation()
 
     const handleLogout = async () => {
-        await fetch('/api/auth/logout', { method: 'POST' })
-        dispatch(clearUser())
-        localStorage.removeItem('token')
-        router.push('/login')
+        try {
+            await logout(undefined).unwrap()
+        } catch (error) {
+            console.error('Logout failed:', error)
+        } finally {
+            dispatch(clearUser())
+            localStorage.removeItem('token')
+            Cookies.remove('token')
+            router.push('/login')
+        }
     }
 
     return (

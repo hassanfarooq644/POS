@@ -1,14 +1,16 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useAppSelector, useAppDispatch } from '@/lib/hooks'
-import { addToCart, updateQuantity, removeFromCart, setCustomer, clearCart } from '@/lib/features/cart/cartSlice'
+import { addToCart, updateQuantity, removeFromCart, clearCart } from '@/lib/features/cart/cartSlice'
 import { FiSearch, FiPlus, FiMinus, FiTrash2, FiShoppingCart } from 'react-icons/fi'
 import { formatCurrency } from '@/lib/utils'
-import api from '@/lib/api'
+import { useGetProductsQuery } from '@/lib/features/api/products.api'
+import { useGetUsersQuery } from '@/lib/features/api/users.api'
+import { useCreateSaleMutation } from '@/lib/features/api/sales.api'
 
 interface Product {
     id: string
@@ -30,36 +32,16 @@ interface User {
 export default function POSPage() {
     const dispatch = useAppDispatch()
     const cartItems = useAppSelector((state) => state.cart.items)
-    const customerId = useAppSelector((state) => state.cart.customerId)
 
-    const [products, setProducts] = useState<Product[]>([])
-    const [users, setUsers] = useState<User[]>([])
+    const { data: productsData, isLoading: isLoadingProducts } = useGetProductsQuery(undefined)
+    const { data: usersData } = useGetUsersQuery(undefined)
+    const [createSale, { isLoading: isProcessing }] = useCreateSaleMutation()
+
+    const products: Product[] = productsData?.products || []
+    const users: User[] = usersData?.users || []
+
     const [search, setSearch] = useState('')
     const [selectedCustomer, setSelectedCustomer] = useState('')
-    const [isProcessing, setIsProcessing] = useState(false)
-
-    useEffect(() => {
-        fetchProducts()
-        fetchUsers()
-    }, [])
-
-    const fetchProducts = async () => {
-        try {
-            const res = await api.get('/products')
-            setProducts(res.data.products || [])
-        } catch (error) {
-            console.error('Error fetching products', error)
-        }
-    }
-
-    const fetchUsers = async () => {
-        try {
-            const res = await api.get('/users') // Note: backend route needs to exist
-            setUsers(res.data.users || [])
-        } catch (error) {
-            console.error('Error fetching users', error)
-        }
-    }
 
     const filteredProducts = products.filter(
         (p) =>
@@ -94,30 +76,25 @@ export default function POSPage() {
             return
         }
 
-        setIsProcessing(true)
-
         try {
-            const response = await api.post('/sales', {
+            await createSale({
                 customerId: selectedCustomer,
                 items: cartItems.map((item) => ({
                     productId: item.productId,
                     quantity: item.quantity,
                 })),
-            })
-
-            // if (!response.ok) logic is handled by axios interceptor/catch block normally, but checking response status is good
-            // Axios throws on 4xx/5xx by default unless validatedStatus is changed.
-            // So we catch error below.
+            }).unwrap()
 
             alert('Sale completed successfully!')
             dispatch(clearCart())
             setSelectedCustomer('')
-            fetchProducts()
         } catch (error: any) {
-            alert(error.message)
-        } finally {
-            setIsProcessing(false)
+            alert(error.data?.message || error.message || 'Failed to complete sale')
         }
+    }
+
+    if (isLoadingProducts) {
+        return <div className="flex justify-center py-12">Loading products...</div>
     }
 
     return (

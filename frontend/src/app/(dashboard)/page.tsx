@@ -1,181 +1,227 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
-import { FiPackage, FiAlertTriangle, FiTrendingUp, FiDollarSign } from 'react-icons/fi'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { useAppSelector, useAppDispatch } from '@/lib/hooks'
+import { addToCart, updateQuantity, removeFromCart, clearCart } from '@/lib/features/cart/cartSlice'
+import { FiSearch, FiPlus, FiMinus, FiTrash2, FiShoppingCart } from 'react-icons/fi'
 import { formatCurrency } from '@/lib/utils'
+import { useGetProductsQuery } from '@/lib/features/api/products.api'
+import { useGetUsersQuery } from '@/lib/features/api/users.api'
+import { useCreateSaleMutation } from '@/lib/features/api/sales.api'
 
-interface DashboardStats {
-    totalProducts: number
-    lowStockCount: number
-    todaySales: number
-    todayRevenue: number
+interface Product {
+    id: string
+    itemName: string
+    barcode: string
+    quantity: number
+    retailPrice: number
+    tax: number
+    picture?: string
 }
 
-export default function DashboardPage() {
-    const [stats, setStats] = useState<DashboardStats>({
-        totalProducts: 0,
-        lowStockCount: 0,
-        todaySales: 0,
-        todayRevenue: 0,
-    })
-    const [isLoading, setIsLoading] = useState(true)
+interface User {
+    id: string
+    firstName: string
+    lastName: string
+    email: string
+}
 
-    useEffect(() => {
-        const fetchStats = async () => {
-            try {
-                // Fetch products
-                const productsRes = await fetch('/api/products')
-                const productsData = await productsRes.json()
+export default function POSPage() {
+    const dispatch = useAppDispatch()
+    const cartItems = useAppSelector((state) => state.cart.items)
 
-                // Fetch low stock
-                const lowStockRes = await fetch('/api/reports/low-stock')
-                const lowStockData = await lowStockRes.json()
+    const { data: productsData, isLoading: isLoadingProducts } = useGetProductsQuery(undefined)
+    const { data: usersData } = useGetUsersQuery(undefined)
+    const [createSale, { isLoading: isProcessing }] = useCreateSaleMutation()
 
-                // Fetch today's sales
-                const today = new Date().toISOString().split('T')[0]
-                const salesRes = await fetch(`/api/reports/sales-summary?from=${today}&to=${today}`)
-                const salesData = await salesRes.json()
+    const products: Product[] = productsData?.products || []
+    const users: User[] = usersData?.users || []
 
-                setStats({
-                    totalProducts: productsData.products?.length || 0,
-                    lowStockCount: lowStockData.lowStockProducts?.length || 0,
-                    todaySales: salesData.summary?.totalSales || 0,
-                    todayRevenue: salesData.summary?.totalRevenue || 0,
-                })
-            } catch (error) {
-                console.error('Error fetching dashboard stats:', error)
-            } finally {
-                setIsLoading(false)
-            }
+    const [search, setSearch] = useState('')
+    const [selectedCustomer, setSelectedCustomer] = useState('')
+
+    const filteredProducts = products.filter(
+        (p) =>
+            p.itemName.toLowerCase().includes(search.toLowerCase()) ||
+            p.barcode.toLowerCase().includes(search.toLowerCase())
+    )
+
+    const handleAddToCart = (product: Product) => {
+        dispatch(addToCart({
+            productId: product.id,
+            itemName: product.itemName,
+            barcode: product.barcode,
+            quantity: 1,
+            retailPrice: parseFloat(product.retailPrice.toString()),
+            tax: parseFloat(product.tax.toString()),
+            picture: product.picture,
+        }))
+    }
+
+    const calculateTotal = () => {
+        return cartItems.reduce((sum, item) => sum + item.quantity * item.retailPrice, 0)
+    }
+
+    const handleCompleteSale = async () => {
+        if (!selectedCustomer) {
+            alert('Please select a customer')
+            return
         }
 
-        fetchStats()
-    }, [])
+        if (cartItems.length === 0) {
+            alert('Cart is empty')
+            return
+        }
 
-    const statCards = [
-        {
-            title: 'Total Products',
-            value: stats.totalProducts,
-            icon: FiPackage,
-            color: 'text-primary-600',
-            bgColor: 'bg-primary-50',
-        },
-        {
-            title: 'Low Stock Items',
-            value: stats.lowStockCount,
-            icon: FiAlertTriangle,
-            color: 'text-warning-600',
-            bgColor: 'bg-warning-50',
-        },
-        {
-            title: "Today's Sales",
-            value: stats.todaySales,
-            icon: FiTrendingUp,
-            color: 'text-success-600',
-            bgColor: 'bg-success-50',
-        },
-        {
-            title: "Today's Revenue",
-            value: formatCurrency(stats.todayRevenue),
-            icon: FiDollarSign,
-            color: 'text-success-600',
-            bgColor: 'bg-success-50',
-        },
-    ]
+        try {
+            await createSale({
+                customerId: selectedCustomer,
+                items: cartItems.map((item) => ({
+                    productId: item.productId,
+                    quantity: item.quantity,
+                })),
+            }).unwrap()
 
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-            </div>
-        )
+            alert('Sale completed successfully!')
+            dispatch(clearCart())
+            setSelectedCustomer('')
+        } catch (error: any) {
+            alert(error.data?.message || error.message || 'Failed to complete sale')
+        }
+    }
+
+    if (isLoadingProducts) {
+        return <div className="flex justify-center py-12">Loading products...</div>
     }
 
     return (
-        <div>
-            <div className="mb-8">
-                <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-                <p className="text-gray-600 mt-1">Welcome to your inventory management system</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {statCards.map((stat) => {
-                    const Icon = stat.icon
-                    return (
-                        <Card key={stat.title}>
-                            <CardContent className="pt-6">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="text-sm font-medium text-gray-600">{stat.title}</p>
-                                        <p className="text-2xl font-bold text-gray-900 mt-2">{stat.value}</p>
-                                    </div>
-                                    <div className={`${stat.bgColor} p-3 rounded-lg`}>
-                                        <Icon className={`h-6 w-6 ${stat.color}`} />
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )
-                })}
-            </div>
-
-            <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Products Section */}
+            <div className="lg:col-span-2">
                 <Card>
                     <CardHeader>
-                        <CardTitle>Quick Actions</CardTitle>
+                        <CardTitle>Point of Sale</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="space-y-3">
-                            <a
-                                href="/products/new"
-                                className="block p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                            >
-                                <p className="font-medium text-gray-900">Add New Product</p>
-                                <p className="text-sm text-gray-600">Create a new inventory item</p>
-                            </a>
-                            <a
-                                href="/pos"
-                                className="block p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                            >
-                                <p className="font-medium text-gray-900">Process Sale</p>
-                                <p className="text-sm text-gray-600">Open Point of Sale</p>
-                            </a>
-                            <a
-                                href="/reports"
-                                className="block p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                            >
-                                <p className="font-medium text-gray-900">View Reports</p>
-                                <p className="text-sm text-gray-600">Access sales and inventory reports</p>
-                            </a>
+                        <div className="mb-4">
+                            <div className="relative">
+                                <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                                <Input
+                                    placeholder="Search products..."
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    className="pl-10"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 max-h-[600px] overflow-y-auto">
+                            {filteredProducts.map((product) => (
+                                <div
+                                    key={product.id}
+                                    className="border rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer"
+                                    onClick={() => handleAddToCart(product)}
+                                >
+                                    <h3 className="font-medium text-gray-900">{product.itemName}</h3>
+                                    <p className="text-sm text-gray-600">{product.barcode}</p>
+                                    <div className="flex justify-between items-center mt-2">
+                                        <span className="font-semibold text-primary-600">
+                                            {formatCurrency(product.retailPrice)}
+                                        </span>
+                                        <span className="text-xs text-gray-500">Stock: {product.quantity}</span>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </CardContent>
                 </Card>
+            </div>
 
+            {/* Cart Section */}
+            <div>
                 <Card>
                     <CardHeader>
-                        <CardTitle>System Information</CardTitle>
+                        <CardTitle>
+                            <FiShoppingCart className="inline mr-2" />
+                            Cart ({cartItems.length})
+                        </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="space-y-3">
-                            <div className="flex justify-between py-2 border-b border-gray-100">
-                                <span className="text-gray-600">Total Products</span>
-                                <span className="font-medium">{stats.totalProducts}</span>
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Select Customer *
+                            </label>
+                            <select
+                                value={selectedCustomer}
+                                onChange={(e) => setSelectedCustomer(e.target.value)}
+                                className="w-full h-10 rounded-md border border-gray-300 px-3"
+                            >
+                                <option value="">Choose a customer</option>
+                                {users.map((user) => (
+                                    <option key={user.id} value={user.id}>
+                                        {user.firstName} {user.lastName}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="space-y-3 mb-4 max-h-[300px] overflow-y-auto">
+                            {cartItems.map((item) => (
+                                <div key={item.productId} className="border rounded-lg p-3">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div>
+                                            <h4 className="font-medium text-sm">{item.itemName}</h4>
+                                            <p className="text-xs text-gray-600">{formatCurrency(item.retailPrice)}</p>
+                                        </div>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => dispatch(removeFromCart(item.productId))}
+                                        >
+                                            <FiTrash2 className="h-4 w-4 text-danger-600" />
+                                        </Button>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => dispatch(updateQuantity({ productId: item.productId, quantity: Math.max(1, item.quantity - 1) }))}
+                                        >
+                                            <FiMinus className="h-3 w-3" />
+                                        </Button>
+                                        <span className="w-12 text-center">{item.quantity}</span>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => dispatch(updateQuantity({ productId: item.productId, quantity: item.quantity + 1 }))}
+                                        >
+                                            <FiPlus className="h-3 w-3" />
+                                        </Button>
+                                        <span className="ml-auto font-semibold">
+                                            {formatCurrency(item.quantity * item.retailPrice)}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="border-t pt-4">
+                            <div className="flex justify-between text-lg font-bold mb-4">
+                                <span>Total:</span>
+                                <span>{formatCurrency(calculateTotal())}</span>
                             </div>
-                            <div className="flex justify-between py-2 border-b border-gray-100">
-                                <span className="text-gray-600">Low Stock Alerts</span>
-                                <span className="font-medium text-warning-600">{stats.lowStockCount}</span>
-                            </div>
-                            <div className="flex justify-between py-2 border-b border-gray-100">
-                                <span className="text-gray-600">Today's Sales</span>
-                                <span className="font-medium text-success-600">{stats.todaySales}</span>
-                            </div>
-                            <div className="flex justify-between py-2">
-                                <span className="text-gray-600">Today's Revenue</span>
-                                <span className="font-medium text-success-600">
-                                    {formatCurrency(stats.todayRevenue)}
-                                </span>
-                            </div>
+
+                            <Button
+                                className="w-full"
+                                onClick={handleCompleteSale}
+                                disabled={isProcessing || cartItems.length === 0 || !selectedCustomer}
+                            >
+                                {isProcessing ? 'Processing...' : 'Complete Sale'}
+                            </Button>
                         </div>
                     </CardContent>
                 </Card>

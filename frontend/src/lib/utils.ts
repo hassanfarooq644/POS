@@ -21,3 +21,13 @@ export function formatDate(date: Date | string): string {
         minute: '2-digit',
     }).format(new Date(date))
 }
+
+export function getImageUrl(path: string | null | undefined): string {
+    if (!path) return ''
+    if (path.startsWith('http')) return path
+    
+    const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace('/api', '') || 'http://localhost:5001'
+    // Ensure no double slashes
+    const cleanPath = path.startsWith('/') ? path : `/${path}`
+    return `${baseUrl}${cleanPath}`
+}

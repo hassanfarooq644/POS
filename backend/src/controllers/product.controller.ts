@@ -34,11 +34,11 @@ export const getProducts = async (req: Request, res: Response) => {
 export const createProduct = async (req: Request, res: Response) => {
     try {
         const currentUser = req.user
-
         if (!currentUser) {
             return res.status(401).json({ error: 'Unauthorized' })
         }
 
+        const body = req.body || {}
         const {
             itemName,
             barcode,
@@ -48,16 +48,25 @@ export const createProduct = async (req: Request, res: Response) => {
             retailPrice,
             description,
             shortDescription,
-            picture,
             tax,
             categoryId,
             itemTypeId,
-        } = req.body
+        } = body
 
-        // Validate required fields
-        if (!itemName || !barcode || !categoryId || !itemTypeId || wholesalePrice == null || retailPrice == null) {
-            return res.status(400).json({ error: 'Missing required fields' })
+        // Proper validation messages as requested
+        const errors: string[] = []
+        if (!itemName) errors.push('Product name is required')
+        if (!barcode) errors.push('Barcode is required')
+        if (!categoryId) errors.push('Category is required')
+        if (!itemTypeId) errors.push('Item type is required')
+        if (wholesalePrice === undefined || wholesalePrice === '') errors.push('Wholesale price is required')
+        if (retailPrice === undefined || retailPrice === '') errors.push('Retail price is required')
+
+        if (errors.length > 0) {
+            return res.status(400).json({ error: errors[0], details: errors })
         }
+
+        const picture = req.file ? `/assets/product-images/${req.file.filename}` : body.picture
 
         // Check if barcode already exists
         const existingProduct = await prisma.product.findUnique({
@@ -74,14 +83,14 @@ export const createProduct = async (req: Request, res: Response) => {
                 data: {
                     itemName,
                     barcode,
-                    quantity: quantity || 0,
+                    quantity: parseInt(quantity?.toString() || '0'),
                     company,
-                    wholesalePrice,
-                    retailPrice,
+                    wholesalePrice: parseFloat(wholesalePrice.toString()),
+                    retailPrice: parseFloat(retailPrice.toString()),
                     description,
                     shortDescription,
                     picture,
-                    tax: tax || 0,
+                    tax: parseFloat(tax?.toString() || '0'),
                     categoryId,
                     itemTypeId,
                     createdBy: currentUser.email,
@@ -94,10 +103,11 @@ export const createProduct = async (req: Request, res: Response) => {
             })
 
             // Create initial inventory log if quantity > 0
-            if (quantity && quantity > 0) {
+            const q = parseInt(quantity?.toString() || '0')
+            if (q > 0) {
                 await tx.inventoryLog.create({
                     data: {
-                        quantityChange: quantity,
+                        quantityChange: q,
                         reason: 'Initial Stock',
                         productId: newProduct.id,
                         userId: currentUser.userId,
@@ -146,6 +156,7 @@ export const updateProduct = async (req: Request, res: Response) => {
         if (!currentUser) return res.status(401).json({ error: 'Unauthorized' })
 
         const { id } = req.params
+        const body = req.body || {}
         const {
             itemName,
             barcode,
@@ -155,11 +166,12 @@ export const updateProduct = async (req: Request, res: Response) => {
             retailPrice,
             description,
             shortDescription,
-            picture,
             tax,
             categoryId,
             itemTypeId,
-        } = req.body
+        } = body
+
+        const picture = req.file ? `/assets/product-images/${req.file.filename}` : body.picture
 
         const existingProduct = await prisma.product.findUnique({
             where: { id: id as string },
@@ -175,14 +187,14 @@ export const updateProduct = async (req: Request, res: Response) => {
                 data: {
                     itemName,
                     barcode,
-                    quantity,
+                    quantity: quantity != null ? parseInt(quantity.toString()) : undefined,
                     company,
-                    wholesalePrice,
-                    retailPrice,
+                    wholesalePrice: wholesalePrice != null ? parseFloat(wholesalePrice.toString()) : undefined,
+                    retailPrice: retailPrice != null ? parseFloat(retailPrice.toString()) : undefined,
                     description,
                     shortDescription,
                     picture,
-                    tax,
+                    tax: tax != null ? parseFloat(tax.toString()) : undefined,
                     categoryId,
                     itemTypeId,
                     updatedBy: currentUser.email,
@@ -193,18 +205,21 @@ export const updateProduct = async (req: Request, res: Response) => {
                 },
             })
 
-            if (quantity != null && quantity !== existingProduct.quantity) {
-                const quantityChange = quantity - existingProduct.quantity
-                await tx.inventoryLog.create({
-                    data: {
-                        quantityChange,
-                        reason: 'Manual Correction',
-                        productId: id,
-                        userId: currentUser.userId,
-                        createdBy: currentUser.email,
-                        updatedBy: currentUser.email,
-                    },
-                })
+            if (quantity != null) {
+                const q = parseInt(quantity.toString())
+                if (q !== existingProduct.quantity) {
+                    const quantityChange = q - existingProduct.quantity
+                    await tx.inventoryLog.create({
+                        data: {
+                            quantityChange,
+                            reason: 'Manual Correction',
+                            productId: id,
+                            userId: currentUser.userId,
+                            createdBy: currentUser.email,
+                            updatedBy: currentUser.email,
+                        },
+                    })
+                }
             }
 
             return updatedProduct

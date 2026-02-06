@@ -1,12 +1,18 @@
 'use client'
 
-import { useEffect, useState, FormEvent } from 'react'
+import { useState, FormEvent } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { DataTable } from '@/components/ui/DataTable'
 import { Modal } from '@/components/ui/Modal'
 import { FiPlus, FiEdit, FiTrash2 } from 'react-icons/fi'
+import {
+    useGetCategoriesQuery,
+    useCreateCategoryMutation,
+    useUpdateCategoryMutation,
+    useDeleteCategoryMutation,
+} from '@/lib/features/api/categories.api'
 
 interface Category {
     id: string
@@ -15,40 +21,27 @@ interface Category {
 }
 
 export default function CategoriesPage() {
-    const [categories, setCategories] = useState<Category[]>([])
+    const { data, isLoading } = useGetCategoriesQuery(undefined)
+    const [createCategory] = useCreateCategoryMutation()
+    const [updateCategory] = useUpdateCategoryMutation()
+    const [deleteCategory] = useDeleteCategoryMutation()
+
+    const categories = data?.categories || []
+
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editingCategory, setEditingCategory] = useState<Category | null>(null)
     const [name, setName] = useState('')
 
-    useEffect(() => {
-        fetchCategories()
-    }, [])
-
-    const fetchCategories = async () => {
-        const res = await fetch('/api/categories')
-        const data = await res.json()
-        setCategories(data.categories || [])
-    }
-
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault()
-
+        debugger
         try {
             if (editingCategory) {
-                await fetch(`/api/categories/${editingCategory.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name }),
-                })
+                await updateCategory({ id: editingCategory.id, name }).unwrap()
             } else {
-                await fetch('/api/categories', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name }),
-                })
+                await createCategory({ name }).unwrap()
             }
 
-            fetchCategories()
             setIsModalOpen(false)
             setName('')
             setEditingCategory(null)
@@ -61,8 +54,7 @@ export default function CategoriesPage() {
         if (!confirm('Are you sure?')) return
 
         try {
-            await fetch(`/api/categories/${id}`, { method: 'DELETE' })
-            fetchCategories()
+            await deleteCategory(id).unwrap()
         } catch (error) {
             console.error('Error deleting category:', error)
         }
@@ -91,6 +83,10 @@ export default function CategoriesPage() {
             ),
         },
     ]
+
+    if (isLoading) {
+        return <div className="flex justify-center py-12">Loading...</div>
+    }
 
     return (
         <div>

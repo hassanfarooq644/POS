@@ -6,7 +6,7 @@ import Navbar from '@/components/Navbar'
 import Sidebar from '@/components/Sidebar'
 import { useAppDispatch, useAppSelector } from '@/lib/hooks'
 import { setUser, setLoading } from '@/lib/features/auth/authSlice'
-import api from '@/lib/api'
+import { useGetMeQuery } from '@/lib/features/api/auth.api'
 
 export default function DashboardLayout({
     children,
@@ -15,33 +15,31 @@ export default function DashboardLayout({
 }) {
     const router = useRouter()
     const dispatch = useAppDispatch()
-    const { user, isLoading } = useAppSelector((state) => state.auth)
+    const { user, isLoading: authSliceLoading } = useAppSelector((state) => state.auth)
+
+    const { data: meData, isLoading: isQueryLoading, isError } = useGetMeQuery(undefined, {
+        skip: !!user, // Skip if we already have a user in the slice
+    })
 
     useEffect(() => {
-        const fetchUser = async () => {
-            try {
-                const response = await api.get('/auth/me')
-                if (!response.data.success) {
-                    router.push('/login')
-                    return
-                }
-                dispatch(setUser(response.data.user))
-            } catch (error) {
+        if (meData) {
+            if (meData.user) {
+                dispatch(setUser(meData.user))
+            } else {
                 router.push('/login')
-            } finally {
-                dispatch(setLoading(false))
             }
+            dispatch(setLoading(false))
+        } else if (isError) {
+            router.push('/login')
+            dispatch(setLoading(false))
         }
+    }, [meData, isError, dispatch, router])
 
-        if (!user) {
-            fetchUser()
-        }
-    }, [dispatch, router, user])
+    const isLoading = authSliceLoading || (isQueryLoading && !user)
 
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
-                {JSON.stringify(user)}
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
                     <p className="mt-4 text-gray-600">Loading...</p>
@@ -51,7 +49,7 @@ export default function DashboardLayout({
     }
 
     if (!user && !isLoading) {
-        router.push('/login')
+        // This case should be handled by the useEffect above, but as a secondary guard
         return null
     }
 

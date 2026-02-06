@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useAppDispatch } from '@/lib/hooks'
 import { setUser } from '@/lib/features/auth/authSlice'
-import { register } from '@/lib/auth'
+import { useRegisterMutation } from '@/lib/features/api/auth.api'
+import Cookies from 'js-cookie'
 
 export default function RegisterPage() {
     const router = useRouter()
@@ -22,7 +23,7 @@ export default function RegisterPage() {
         phoneNumber: '',
     })
     const [error, setError] = useState('')
-    const [isLoading, setIsLoading] = useState(false)
+    const [register, { isLoading }] = useRegisterMutation()
 
     const handleChange = (field: string, value: string) => {
         setFormData((prev) => ({ ...prev, [field]: value }))
@@ -37,17 +38,21 @@ export default function RegisterPage() {
             return
         }
 
-        setIsLoading(true)
-
         try {
-            const { user } = await register({
+            const response = await register({
                 firstName: formData.firstName,
                 lastName: formData.lastName,
                 email: formData.email,
                 username: formData.username,
                 password: formData.password,
                 phoneNumber: formData.phoneNumber,
-            })
+            }).unwrap()
+
+            const { user, token } = response
+
+            // Store token in cookies and localStorage for compatibility
+            Cookies.set('token', token, { expires: 7 })
+            localStorage.setItem('token', token)
 
             // Store user in Redux
             dispatch(setUser(user))
@@ -55,9 +60,7 @@ export default function RegisterPage() {
             // Redirect to dashboard
             router.push('/')
         } catch (err: any) {
-            setError(err.message)
-        } finally {
-            setIsLoading(false)
+            setError(err.data?.message || err.message || 'Registration failed')
         }
     }
 

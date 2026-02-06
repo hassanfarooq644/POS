@@ -15,9 +15,9 @@ import {
 import { useAppSelector } from '@/lib/hooks'
 
 const navItems = [
-    { name: 'Dashboard', href: '/', icon: FiHome, roles: ['ADMIN', 'MANAGER', 'STAFF'] },
+    { name: 'Dashboard', href: '/dashboard', icon: FiHome, roles: ['ADMIN', 'MANAGER', 'STAFF'] },
     { name: 'Products', href: '/products', icon: FiPackage, roles: ['ADMIN', 'MANAGER', 'STAFF'] },
-    { name: 'POS', href: '/pos', icon: FiShoppingCart, roles: ['ADMIN', 'MANAGER', 'STAFF'] },
+    { name: 'POS', href: '/', icon: FiShoppingCart, roles: ['ADMIN', 'MANAGER', 'STAFF'] },
     { name: 'Sales', href: '/sales', icon: FiShoppingCart, roles: ['ADMIN', 'MANAGER', 'STAFF'] },
     { name: 'Categories', href: '/categories', icon: FiLayers, roles: ['ADMIN', 'MANAGER'] },
     { name: 'Item Types', href: '/item-types', icon: FiTag, roles: ['ADMIN', 'MANAGER'] },

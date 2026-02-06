@@ -1,10 +1,14 @@
 'use client'
 
-import { useState, useEffect, FormEvent, use } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent } from '@/components/ui/Card'
+import { useGetProductQuery, useUpdateProductMutation } from '@/lib/features/api/products.api'
+import { useGetCategoriesQuery } from '@/lib/features/api/categories.api'
+import { useGetItemTypesQuery } from '@/lib/features/api/itemTypes.api'
+import { getImageUrl } from '@/lib/utils'
 
 interface Category {
     id: string
@@ -16,12 +20,21 @@ interface ItemType {
     name: string
 }
 
-export default function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = use(params)
+export default function EditProductPage({ params }: { params: { id: string } }) {
+    const { id } = params
     const router = useRouter()
-    const [categories, setCategories] = useState<Category[]>([])
-    const [itemTypes, setItemTypes] = useState<ItemType[]>([])
-    const [isLoading, setIsLoading] = useState(true)
+
+    const { data: productData, isLoading: isLoadingProduct } = useGetProductQuery(id)
+    const { data: categoriesData, isLoading: isLoadingCategories } = useGetCategoriesQuery(undefined)
+    const { data: itemTypesData, isLoading: isLoadingItemTypes } = useGetItemTypesQuery(undefined)
+    const [updateProduct, { isLoading: isUpdating }] = useUpdateProductMutation()
+
+    const categories: Category[] = categoriesData?.categories || []
+    const itemTypes: ItemType[] = itemTypesData?.itemTypes || []
+
+    const [selectedFile, setSelectedFile] = useState<File | null>(null)
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
     const [formData, setFormData] = useState({
         itemName: '',
         barcode: '',
@@ -37,16 +50,8 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     })
 
     useEffect(() => {
-        fetchProduct()
-        fetchCategories()
-        fetchItemTypes()
-    }, [])
-
-    const fetchProduct = async () => {
-        try {
-            const res = await fetch(`/api/products/${id}`)
-            const data = await res.json()
-            const product = data.product
+        if (productData?.product) {
+            const product = productData.product
             setFormData({
                 itemName: product.itemName,
                 barcode: product.barcode,
@@ -60,57 +65,53 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                 categoryId: product.categoryId,
                 itemTypeId: product.itemTypeId,
             })
-        } catch (error) {
-            console.error('Error fetching product:', error)
-        } finally {
-            setIsLoading(false)
+            if (product.picture) {
+                setPreviewUrl(getImageUrl(product.picture))
+            }
         }
-    }
+    }, [productData])
 
-    const fetchCategories = async () => {
-        const res = await fetch('/api/categories')
-        const data = await res.json()
-        setCategories(data.categories || [])
-    }
-
-    const fetchItemTypes = async () => {
-        const res = await fetch('/api/item-types')
-        const data = await res.json()
-        setItemTypes(data.itemTypes || [])
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (file) {
+            setSelectedFile(file)
+            const reader = new FileReader()
+            reader.onloadend = () => {
+                setPreviewUrl(reader.result as string)
+            }
+            reader.readAsDataURL(file)
+        }
     }
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault()
-        setIsLoading(true)
 
         try {
-            const response = await fetch(`/api/products/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ...formData,
-                    wholesalePrice: parseFloat(formData.wholesalePrice.toString()),
-                    retailPrice: parseFloat(formData.retailPrice.toString()),
-                    tax: parseFloat(formData.tax.toString()),
-                    quantity: parseInt(formData.quantity.toString()),
-                }),
+            const data = new FormData()
+            Object.entries(formData).forEach(([key, value]) => {
+                data.append(key, value.toString())
             })
-
-            if (!response.ok) {
-                throw new Error('Failed to update product')
+            if (selectedFile) {
+                data.append('picture', selectedFile)
             }
+
+            await updateProduct({ id, formData: data }).unwrap()
 
             router.push('/products')
         } catch (error) {
             console.error('Error updating product:', error)
             alert('Failed to update product')
-        } finally {
-            setIsLoading(false)
         }
     }
 
+    const isLoading = isLoadingProduct || isLoadingCategories || isLoadingItemTypes
+
     if (isLoading) {
-        return <div>Loading...</div>
+        return (
+            <div className="flex justify-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+            </div>
+        )
     }
 
     return (
@@ -146,6 +147,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                                     className="w-full h-10 rounded-md border border-gray-300 px-3"
                                     required
                                 >
+                                    <option value="">Select Category</option>
                                     {categories.map((cat) => (
                                         <option key={cat.id} value={cat.id}>
                                             {cat.name}
@@ -164,6 +166,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                                     className="w-full h-10 rounded-md border border-gray-300 px-3"
                                     required
                                 >
+                                    <option value="">Select Type</option>
                                     {itemTypes.map((type) => (
                                         <option key={type.id} value={type.id}>
                                             {type.name}
@@ -219,6 +222,32 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                             onChange={(e) => setFormData({ ...formData, shortDescription: e.target.value })}
                         />
 
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                                Product Image
+                            </label>
+                            <div className="flex items-start gap-4">
+                                {previewUrl && (
+                                    <img
+                                        src={previewUrl}
+                                        alt="Preview"
+                                        className="w-32 h-32 object-cover rounded-lg border border-gray-200"
+                                    />
+                                )}
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleFileChange}
+                                    className="block w-full text-sm text-gray-500
+                                        file:mr-4 file:py-2 file:px-4
+                                        file:rounded-md file:border-0
+                                        file:text-sm file:font-semibold
+                                        file:bg-primary-50 file:text-primary-700
+                                        hover:file:bg-primary-100"
+                                />
+                            </div>
+                        </div>
+
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 Description
@@ -231,8 +260,8 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
                         </div>
 
                         <div className="flex gap-4">
-                            <Button type="submit" disabled={isLoading}>
-                                {isLoading ? 'Saving...' : 'Save Changes'}
+                            <Button type="submit" disabled={isUpdating}>
+                                {isUpdating ? 'Saving...' : 'Save Changes'}
                             </Button>
                             <Button
                                 type="button"

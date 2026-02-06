@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { DataTable } from '@/components/ui/DataTable'
+import { useGetUsersQuery } from '@/lib/features/api/users.api'
 
 interface User {
     id: string
@@ -14,24 +14,8 @@ interface User {
 }
 
 export default function UsersPage() {
-    const [users, setUsers] = useState<User[]>([])
-    const [isLoading, setIsLoading] = useState(true)
-
-    useEffect(() => {
-        fetchUsers()
-    }, [])
-
-    const fetchUsers = async () => {
-        try {
-            const response = await fetch('/api/users')
-            const data = await response.json()
-            setUsers(data.users || [])
-        } catch (error) {
-            console.error('Error fetching users:', error)
-        } finally {
-            setIsLoading(false)
-        }
-    }
+    const { data, isLoading } = useGetUsersQuery(undefined)
+    const users = data?.users || []
 
     const columns = [
         {
@@ -56,8 +40,8 @@ export default function UsersPage() {
             render: (user: User) => (
                 <span
                     className={`px-2 py-1 rounded-full text-xs font-medium ${user.isActive
-                            ? 'bg-success-100 text-success-700'
-                            : 'bg-gray-100 text-gray-700'
+                        ? 'bg-success-100 text-success-700'
+                        : 'bg-gray-100 text-gray-700'
                         }`}
                 >
                     {user.isActive ? 'Active' : 'Inactive'}
@@ -67,7 +51,7 @@ export default function UsersPage() {
     ]
 
     if (isLoading) {
-        return <div>Loading...</div>
+        return <div className="flex justify-center py-12">Loading...</div>
     }
 
     return (

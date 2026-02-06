@@ -1,11 +1,17 @@
 'use client'
 
-import { useEffect, useState, FormEvent } from 'react'
+import { useState, FormEvent } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { DataTable } from '@/components/ui/DataTable'
 import { Modal } from '@/components/ui/Modal'
 import { FiPlus, FiEdit, FiTrash2 } from 'react-icons/fi'
+import {
+    useGetItemTypesQuery,
+    useCreateItemTypeMutation,
+    useUpdateItemTypeMutation,
+    useDeleteItemTypeMutation,
+} from '@/lib/features/api/itemTypes.api'
 
 interface ItemType {
     id: string
@@ -13,40 +19,27 @@ interface ItemType {
 }
 
 export default function ItemTypesPage() {
-    const [itemTypes, setItemTypes] = useState<ItemType[]>([])
+    const { data, isLoading } = useGetItemTypesQuery(undefined)
+    const [createItemType] = useCreateItemTypeMutation()
+    const [updateItemType] = useUpdateItemTypeMutation()
+    const [deleteItemType] = useDeleteItemTypeMutation()
+
+    const itemTypes = data?.itemTypes || []
+
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editingType, setEditingType] = useState<ItemType | null>(null)
     const [name, setName] = useState('')
-
-    useEffect(() => {
-        fetchItemTypes()
-    }, [])
-
-    const fetchItemTypes = async () => {
-        const res = await fetch('/api/item-types')
-        const data = await res.json()
-        setItemTypes(data.itemTypes || [])
-    }
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault()
 
         try {
             if (editingType) {
-                await fetch(`/api/item-types/${editingType.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name }),
-                })
+                await updateItemType({ id: editingType.id, name }).unwrap()
             } else {
-                await fetch('/api/item-types', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name }),
-                })
+                await createItemType({ name }).unwrap()
             }
 
-            fetchItemTypes()
             setIsModalOpen(false)
             setName('')
             setEditingType(null)
@@ -59,8 +52,7 @@ export default function ItemTypesPage() {
         if (!confirm('Are you sure?')) return
 
         try {
-            await fetch(`/api/item-types/${id}`, { method: 'DELETE' })
-            fetchItemTypes()
+            await deleteItemType(id).unwrap()
         } catch (error) {
             console.error('Error deleting item type:', error)
         }
@@ -89,6 +81,10 @@ export default function ItemTypesPage() {
             ),
         },
     ]
+
+    if (isLoading) {
+        return <div className="flex justify-center py-12">Loading...</div>
+    }
 
     return (
         <div>
